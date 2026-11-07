@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paper Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root{
+    --ink:#23303f;
+    --line:rgba(80,130,200,.30);
+    --margin:rgba(214,60,60,.50);
+    --lh:32px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:
+      radial-gradient(circle at 20% 10%, rgba(255,255,255,.07), transparent 40%),
+      #6b5b4b;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(0,0,0,.05) 0 2px, transparent 2px 6px),
+      radial-gradient(circle at 20% 10%, rgba(255,255,255,.08), transparent 40%);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Patrick Hand',cursive;color:var(--ink);
+  }
+
+  /* ---------- A4 paper ---------- */
+  .paper{
+    position:relative;
+    width:min(794px,100vw);
+    height:min(1123px,100dvh);
+    background:#fffdf7;
+    box-shadow:0 20px 60px rgba(0,0,0,.55), 0 2px 0 rgba(255,255,255,.4) inset;
+    display:flex;flex-direction:column;overflow:hidden;
+    background-image:
+      linear-gradient(to right, transparent 70px, var(--margin) 70px, var(--margin) 72px, transparent 72px),
+      radial-gradient(circle at 24px 18%, #6b5b4b 0 9px, rgba(0,0,0,.25) 10px, transparent 11px),
+      radial-gradient(circle at 24px 50%, #6b5b4b 0 9px, rgba(0,0,0,.25) 10px, transparent 11px),
+      radial-gradient(circle at 24px 82%, #6b5b4b 0 9px, rgba(0,0,0,.25) 10px, transparent 11px);
+  }
+  .paper::after{ /* faint paper grain */
+    content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;mix-blend-mode:multiply;
+    background-image:radial-gradient(rgba(120,100,60,.12) 1px, transparent 1px);
+    background-size:5px 5px;
+  }
+
+  /* ---------- highlighter text ---------- */
+  .hl{
+    --c:#fff176;
+    display:inline;
+    padding:0 .35em;
+    line-height:var(--lh);
+    background:linear-gradient(103deg, transparent 0.6%, var(--c) 2.2%, var(--c) 97%, transparent 99.4%);
+    -webkit-box-decoration-break:clone;box-decoration-break:clone;
+    border-radius:.25em .7em .35em .6em;
+    mix-blend-mode:multiply;
+    word-break:break-word;
+  }
+  .hl.big{font-size:34px;font-family:'Caveat',cursive;font-weight:700}
+  .hl.sm{font-size:15px}
+  .hl.err{--c:#ffb3b3}
+
+  /* ---------- header ---------- */
+  header{position:relative;z-index:2;padding:18px 24px 6px 92px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .spacer{flex:1}
+  .date{font-size:16px;opacity:.7}
+  .tools{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .sticker{
+    font:inherit;font-size:17px;cursor:pointer;border:0;color:var(--ink);
+    background:#fff;padding:4px 12px;border-radius:999px;
+    box-shadow:0 0 0 3px #fff, 0 2px 0 3px rgba(0,0,0,.18), 2px 4px 6px rgba(0,0,0,.2);
+    transform:rotate(-1.5deg);transition:transform .15s;
+  }
+  .sticker:hover{transform:rotate(1deg) scale(1.05)}
+  .sticker.on{background:#b9f6ca}
+  .sticker.off{background:#ffcdd2}
+
+  .people{position:relative;z-index:2;padding:4px 24px 6px 92px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-height:42px}
+  .chip{position:relative;transition:transform .15s}
+  .chip .hl{font-size:19px}
+  .chip.talk{animation:wob .5s infinite alternate}
+  .chip.talk::after{content:"🔊";position:absolute;right:-12px;top:-10px;font-size:14px}
+  @keyframes wob{from{transform:rotate(-2deg) scale(1)}to{transform:rotate(2deg) scale(1.08)}}
+  .addpeer{display:flex;gap:4px;align-items:center;margin-left:auto}
+  .addpeer input{
+    width:120px;font:inherit;font-size:16px;border:0;border-bottom:2px dashed rgba(0,0,0,.35);
+    background:transparent;color:var(--ink);padding:2px 4px;outline:none
+  }
+
+  /* ---------- messages ---------- */
+  #msgs{
+    position:relative;z-index:2;flex:1;overflow-y:auto;
+    padding:4px 24px 12px 92px;
+    display:flex;flex-direction:column;gap:6px;
+    background-image:repeating-linear-gradient(to bottom, transparent 0 calc(var(--lh) - 1px), var(--line) calc(var(--lh) - 1px) var(--lh));
+    background-attachment:local;
+    scroll-behavior:smooth;
+  }
+  .msg{display:flex;flex-direction:column;max-width:86%;align-self:flex-start;margin-top:2px}
+  .msg.me{align-self:flex-end;align-items:flex-end}
+  .meta{font-size:14px;opacity:.75}
+  .meta .hl{font-size:14px;line-height:20px}
+  .txt{font-size:21px}
+  .sticky{
+    --s:#fff59d;--r:-1.2deg;
+    position:relative;background:var(--s);
+    padding:18px 18px 20px;margin:10px 4px 8px;
+    font-family:'Caveat',cursive;font-size:24px;line-height:1.2;
+    box-shadow:2px 8px 12px rgba(0,0,0,.2);
+    transform:rotate(var(--r));white-space:pre-wrap;word-break:break-word;
+  }
+  .sticky::before{
+    content:"";position:absolute;top:-8px;left:50%;width:70px;height:18px;margin-left:-35px;
+    background:rgba(255,255,255,.55);box-shadow:0 1px 3px rgba(0,0,0,.2);transform:rotate(2deg)
+  }
+  .sticky::after{
+    content:"";position:absolute;right:0;bottom:0;width:18px;height:18px;
+    background:linear-gradient(135deg, rgba(0,0,0,.18) 50%, rgba(255,255,255,.6) 50%);
+  }
+  .empty{margin:auto;text-align:center}
+
+  /* ---------- composer ---------- */
+  .typing{position:relative;z-index:2;height:26px;padding:0 24px 0 92px;font-size:17px}
+  .typing .pen{display:inline-block;animation:scribble .5s infinite alternate}
+  @keyframes scribble{from{transform:translateX(-2px) rotate(-12deg)}to{transform:translateX(4px) rotate(8deg)}}
+  .composer{position:relative;z-index:2;padding:6px 24px 20px 92px;display:flex;gap:10px;align-items:flex-end}
+  textarea{
+    flex:1;font:inherit;font-size:21px;line-height:var(--lh);resize:none;max-height:140px;
+    border:0;outline:none;color:var(--ink);padding:2px 8px;min-height:36px;
+    background:linear-gradient(103deg, transparent 0.6%, rgba(255,241,118,.55) 2%, rgba(255,241,118,.55) 98%, transparent 99.4%);
+    border-radius:.3em .8em .4em .7em;
+  }
+  textarea::placeholder{color:rgba(35,48,63,.5)}
+  .send{font-size:20px;padding:6px 16px;background:#ffe14d}
+
+  /* ---------- join screen ---------- */
+  #join{
+    position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:22px;padding:30px 30px 30px 90px;text-align:center;
+    background:inherit;background-color:#fffdf7;
+  }
+  #join .lines{position:absolute;inset:0;z-index:-1;
+    background-image:repeating-linear-gradient(to bottom, transparent 0 31px, var(--line) 31px 32px)}
+  #join input{
+    font:inherit;font-family:'Caveat',cursive;font-size:38px;font-weight:700;text-align:center;
+    width:min(380px,100%);border:0;border-bottom:3px solid var(--ink);background:transparent;outline:none;color:var(--ink);padding:4px
+  }
+  #join .go{font-size:26px;padding:8px 26px;background:#ffe14d}
+  #join .go[disabled]{opacity:.5;cursor:wait}
+  #app{display:contents}
+  .hidden{display:none!important}
+
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
+  .toast .hl{font-size:18px;box-shadow:0 3px 8px rgba(0,0,0,.25);padding:2px 12px;animation:pop .25s}
+  @keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+
+  @media (max-width:600px){
+    header,.people,#msgs,.typing,.composer{padding-left:56px;padding-right:12px}
+    .paper{background-image:
+      linear-gradient(to right, transparent 44px, var(--margin) 44px, var(--margin) 46px, transparent 46px),
+      radial-gradient(circle at 14px 18%, #6b5b4b 0 6px, transparent 7px),
+      radial-gradient(circle at 14px 50%, #6b5b4b 0 6px, transparent 7px),
+      radial-gradient(circle at 14px 82%, #6b5b4b 0 6px, transparent 7px);}
+    #join{padding-left:56px}
+    .txt{font-size:19px}
+    .msg{max-width:94%}
+  }
+</style>
+</head>
+<body>
+<div class="paper" id="paper">
+
+  <!-- JOIN -->
+  <section id="join">
+    <div class="lines"></div>
+    <div><span class="hl big" style="--c:#fff176">Paper Chat</span></div>
+    <div><span class="hl" style="--c:#8fd8ff;font-size:21px">a public notebook everyone can scribble in</span></div>
+    <div style="font-size:22px">Write your name:</div>
+    <input id="nameInput" maxlength="20" placeholder="your name" autocomplete="off" spellcheck="false">
+    <div id="joinErr" class="hidden"><span class="hl err" id="joinErrTxt"></span></div>
+    <button class="sticker go" id="goBtn" disabled>Loading…</button>
+    <div style="font-size:16px;opacity:.7;max-width:360px">Your mic turns on automatically so you can talk with everyone in the room. Letters, numbers, - and _ only.</div>
+  </section>
+
+  <!-- APP -->
+  <div id="app" class="hidden">
+    <header>
+      <div class="row">
+        <span class="hl big" style="--c:#fff176">Paper Chat</span>
+        <span class="spacer"></span>
+        <span class="date" id="date"></span>
+      </div>
+      <div class="tools">
+        <button class="sticker on" id="micBtn">🎙 Mic on</button>
+        <span class="hl sm" id="status" style="--c:#ffd9a8">connecting…</span>
+        <span class="hl sm hidden" id="hubBadge" style="--c:#e6d0ff">📌 keeping the lobby</span>
+      </div>
+    </header>
+
+    <div class="people" id="people"></div>
+
+    <main id="msgs"></main>
+
+    <div class="typing" id="typing"></div>
+
+    <form class="composer" id="form" autocomplete="off">
+      <textarea id="input" rows="1" placeholder="write something…" maxlength="2000"></textarea>
+      <button class="sticker send" type="submit">Send ✎</button>
+    </form>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+/* =====================  library loading (with CDN fallbacks)  ===================== */
+const $ = s => document.querySelector(s);
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed: ' + src)); document.head.appendChild(s); });
+}
+async function loadYjs() {
+  const urls = ['https://cdn.jsdelivr.net/npm/yjs@13.6.20/+esm', 'https://esm.sh/yjs@13.6.20', 'https://cdn.skypack.dev/yjs@13.6.20'];
+  for (const u of urls) { try { return await import(u); } catch (e) { console.warn('Yjs CDN failed', u, e); } }
+  throw new Error('Could not load Yjs');
+}
+let Y;
+try {
+  Y = await loadYjs();
+  if (typeof window.Peer === 'undefined') {
+    try { await loadScript('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'); } catch {}
+  }
+  if (typeof window.Peer === 'undefined') throw new Error('Could not load PeerJS');
+} catch (e) {
+  console.error(e);
+  const b = document.getElementById('goBtn');
+  b.textContent = 'Libraries failed to load';
+  const t = document.getElementById('joinErrTxt');
+  t.textContent = 'Could not load Yjs/PeerJS from the CDN. Check your connection or ad-blocker, then reload.';
+  document.getElementById('joinErr').classList.remove('hidden');
+  throw e;
+}
+
+/* =====================  helpers  ===================== */
+const PREFIX = 'pcv1-';
+const HUB_ID = PREFIX + 'lobby-hub';
+const NAME_RE = /^[A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)*$/;
+const idFor = n => PREFIX + 'u-' + n.toLowerCase();
+const HL  = ['#fff176','#ff9ecb','#9cf59c','#8fd8ff','#ffc680','#d7b5ff'];
+const STK = ['#fff59d','#ffc1dd','#c5f7c5','#bfe9ff','#ffd9a8','#e6d0ff'];
+const hash = s => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+const colorIdx = n => hash(n.toLowerCase()) % HL.length;
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+function toast(text) {
+  const t = el('span', 'hl', text); t.style.setProperty('--c', '#fff176');
+  $('#toast').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+let lastErrAt = 0;
+const surfaceError = msg => { if (Date.now() - lastErrAt > 4000) { lastErrAt = Date.now(); toast('Error: ' + String(msg).slice(0, 80)); } };
+window.addEventListener('error', e => surfaceError(e.message));
+window.addEventListener('unhandledrejection', e => surfaceError(e.reason?.message || e.reason));
+
+/* =====================  IndexedDB  ===================== */
+const dbp = new Promise((res, rej) => {
+  try {
+    const r = indexedDB.open('paperchat', 1);
+    r.onupgradeneeded = () => { const d = r.result; d.createObjectStore('kv'); d.createObjectStore('updates', { autoIncrement: true }); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  } catch (e) { rej(e); }
+});
+const idb = (store, mode, fn) => dbp.then(db => new Promise((res, rej) => {
+  const t = db.transaction(store, mode);
+  const r = fn(t.objectStore(store));
+  t.oncomplete = () => res(r && r.result);
+  t.onerror = () => rej(t.error);
+}));
+
+/* =====================  Yjs doc  ===================== */
+const ydoc = new Y.Doc();
+const ymsgs = ydoc.getArray('messages');
+let sinceCompact = 0;
+
+async function persist(u) {
+  try {
+    if (++sinceCompact >= 60) {              // compact history into a single update
+      sinceCompact = 0;
+      const full = Y.encodeStateAsUpdate(ydoc);
+      await idb('updates', 'readwrite', s => { s.clear(); s.add(full); });
+    } else {
+      await idb('updates', 'readwrite', s => s.add(u));
+    }
+  } catch {}
+}
+
+ydoc.on('update', (u, origin) => {
+  if (origin === 'idb') return;
+  persist(u);
+  // relay to everyone except the peer it came from (Yjs ignores duplicates)
+  broadcast({ t: 'upd', u }, typeof origin === 'string' && origin.startsWith(PREFIX) ? origin : null);
+});
+ymsgs.observe(() => renderMsgs());
+
+/* =====================  state  ===================== */
+let myName = '', myId = '';
+let peer = null, hubPeer = null, hubConn = null, isHub = false;
+let localStream = null, micOk = false, muted = false;
+const conns = new Map();     // peerId -> { conn, name }
+const pending = new Set();
+const calls = new Map();
+const audios = new Map();
+const registry = new Map();  // hub only
+const typers = new Map();    // name -> timeout
+
+function broadcast(m, except) {
+  conns.forEach((e, id) => { if (id !== except && e.conn.open) { try { e.conn.send(m); } catch {} } });
+}
+
+/* =====================  microphone + audio  ===================== */
+let actx = null;
+const watchers = new Map();
+
+async function initMic() {
+  if (localStream) return;
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('no getUserMedia (needs https or localhost)');
+    localStream = await Promise.race([
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('mic prompt timed out')), 15000))
+    ]);
+    micOk = true;
+  } catch (e) {
+    console.warn('mic:', e);
+    micOk = false;
+    try {
+      actx ??= new AudioContext();
+      localStream = actx.createMediaStreamDestination().stream;   // silent stand-in so we can still hear others
+    } catch { localStream = new MediaStream(); }
+    toast('Mic unavailable — you can listen but not speak');
+  }
+  updateMicBtn();
+  if (micOk) watch('me', localStream);
+}
+
+function updateMicBtn() {
+  const b = $('#micBtn');
+  b.className = 'sticker ' + (!micOk ? '' : muted ? 'off' : 'on');
+  b.textContent = !micOk ? '🚫 No mic' : muted ? '🔇 Muted' : '🎙 Mic on';
+}
+$('#micBtn').addEventListener('click', async () => {
+  if (!micOk) { localStream = null; await initMic(); if (micOk) { toast('Mic enabled — reconnecting voice'); redial(); } return; }
+  muted = !muted;
+  localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+  updateMicBtn();
+});
+
+function watch(id, stream) {
+  try {
+    actx ??= new AudioContext();
+    const src = actx.createMediaStreamSource(stream);
+    const an = actx.createAnalyser(); an.fftSize = 512;
+    src.connect(an);
+    watchers.set(id, { an, buf: new Uint8Array(an.fftSize) });
+  } catch {}
+}
+setInterval(() => {
+  watchers.forEach((w, id) => {
+    w.an.getByteTimeDomainData(w.buf);
+    let m = 0; for (const v of w.buf) m = Math.max(m, Math.abs(v - 128));
+    const on = m > 14 && !(id === 'me' && muted);
+    document.querySelectorAll(`[data-id="${id}"]`).forEach(c => c.classList.toggle('talk', on));
+  });
+}, 180);
+
+function attachAudio(id, stream) {
+  let a = audios.get(id);
+  if (!a) { a = document.createElement('audio'); a.autoplay = true; a.playsInline = true; document.body.appendChild(a); audios.set(id, a); }
+  a.srcObject = stream;
+  a.play().catch(() => {});
+  watch(id, stream);
+}
+document.addEventListener('click', () => { actx?.resume(); audios.forEach(a => a.play().catch(() => {})); });
+
+function handleCall(call) {
+  calls.set(call.peer, call);
+  call.on('stream', s => attachAudio(call.peer, s));
+  call.on('close', () => { calls.delete(call.peer); });
+  call.on('error', () => {});
+}
+function callPeer(id) {
+  if (!peer || !localStream) return;
+  handleCall(peer.call(id, localStream));
+}
+function redial() { conns.forEach((e, id) => { calls.get(id)?.close(); callPeer(id); }); }
+
+/* =====================  networking  ===================== */
+function setStatus(t) { $('#status').textContent = t; }
+
+function startPeer() {
+  const p = peer = new Peer(myId, { debug: 1 });
+  const openTimer = setTimeout(() => {
+    if (peer === p && !p.open) {
+      try { p.destroy(); } catch {}
+      peer = null;
+      showJoinError("Couldn't reach the PeerJS server. Check your connection and try again.");
+    }
+  }, 15000);
+
+  peer.on('open', () => {
+    clearTimeout(openTimer);
+    setStatus('online');
+    $('#join').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    renderPeople(); renderMsgs();
+    claimOrJoinLobby();
+  });
+  peer.on('connection', c => setupConn(c, false));
+  peer.on('call', call => { call.answer(localStream); handleCall(call); });
+  peer.on('disconnected', () => { setStatus('reconnecting…'); setTimeout(() => peer && !peer.destroyed && peer.reconnect(), 1000); });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id') {
+      clearTimeout(openTimer);
+      try { peer.destroy(); } catch {}
+      peer = null;
+      showJoinError(`"${myName}" is already being used right now. Pick another name.`);
+    } else if (!p.open && ['network', 'server-error', 'socket-error', 'socket-closed', 'browser-incompatible', 'invalid-id'].includes(e.type)) {
+      clearTimeout(openTimer);
+      try { p.destroy(); } catch {}
+      peer = null;
+      showJoinError(e.type === 'invalid-id' ? 'That name is not allowed. Try another.' : `Connection problem (${e.type}). Try again.`);
+    } else if (e.type === 'peer-unavailable') {
+      if ((e.message || '').includes(HUB_ID)) { hubConn = null; setTimeout(claimOrJoinLobby, 400 + Math.random() * 1500); }
+      else toast('That user is not online');
+    } else if (e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error') {
+      setStatus('network trouble…');
+    } else { console.warn('peer error', e); }
+  });
+}
+
+function setupConn(conn, initiator) {
+  conn.on('open', () => {
+    pending.delete(conn.peer);
+    const ex = conns.get(conn.peer);
+    if (ex && ex.conn !== conn && ex.conn.open) { conn.close(); return; }   // duplicate
+    conns.set(conn.peer, { conn, name: conn.metadata?.name || '…' });
+    conn.send({ t: 'hello', name: myName });
+    conn.send({ t: 'sv', sv: Y.encodeStateVector(ydoc) });
+    if (initiator) callPeer(conn.peer);
+    renderPeople();
+  });
+  conn.on('data', d => onData(conn, d));
+  conn.on('close', () => dropPeer(conn));
+  conn.on('error', () => dropPeer(conn));
+}
+
+function onData(conn, d) {
+  const e = conns.get(conn.peer);
+  switch (d.t) {
+    case 'hello':
+      if (e) { const first = e.name === '…'; e.name = d.name; renderPeople(); if (first) toast(`${d.name} joined`); }
+      break;
+    case 'sv':
+      conn.send({ t: 'upd', u: Y.encodeStateAsUpdate(ydoc, new Uint8Array(d.sv)) });
+      break;
+    case 'upd':
+      Y.applyUpdate(ydoc, new Uint8Array(d.u), conn.peer);
+      break;
+    case 'typing':
+      if (!e) break;
+      clearTimeout(typers.get(e.name));
+      if (d.on) typers.set(e.name, setTimeout(() => { typers.delete(e.name); renderTyping(); }, 3500));
+      else typers.delete(e.name);
+      renderTyping();
+      break;
+  }
+}
+
+function dropPeer(conn) {
+  const e = conns.get(conn.peer);
+  pending.delete(conn.peer);
+  if (!e || e.conn !== conn) return;
+  conns.delete(conn.peer);
+  calls.get(conn.peer)?.close(); calls.delete(conn.peer);
+  const a = audios.get(conn.peer); if (a) { a.srcObject = null; a.remove(); audios.delete(conn.peer); }
+  watchers.delete(conn.peer);
+  typers.delete(e.name);
+  toast(`${e.name} left`);
+  renderPeople(); renderTyping();
+}
+
+function connectTo(id) {
+  if (!peer || id === myId || conns.has(id) || pending.has(id)) return;
+  pending.add(id);
+  setTimeout(() => pending.delete(id), 8000);
+  setupConn(peer.connect(id, { reliable: true, metadata: { name: myName } }), true);
+}
+
+/* ---- lobby discovery: first user keeps a well-known "hub" peer; others ask it who is here ---- */
+function claimOrJoinLobby() {
+  if (!peer || peer.destroyed || hubPeer || hubConn) return;
+  const hp = new Peer(HUB_ID, { debug: 0 });
+  hp.on('open', () => {
+    hubPeer = hp; isHub = true;
+    $('#hubBadge').classList.remove('hidden');
+  });
+  hp.on('connection', c => {
+    c.on('data', d => {
+      if (d.t !== 'reg') return;
+      const list = [{ id: myId, name: myName }, ...registry.values()];
+      registry.set(c.peer, { id: d.id, name: d.name });
+      c.send({ t: 'peers', list });
+    });
+    c.on('close', () => registry.delete(c.peer));
+  });
+  hp.on('disconnected', () => { if (!hp.destroyed) hp.reconnect(); });
+  hp.on('error', e => {
+    if (e.type === 'unavailable-id') { hp.destroy(); joinHub(); }
+    else if (e.type === 'network' || e.type === 'server-error') { setTimeout(claimOrJoinLobby, 3000); }
+  });
+}
+
+function joinHub() {
+  if (!peer || peer.destroyed || hubConn) return;
+  const c = peer.connect(HUB_ID, { reliable: true });
+  hubConn = c;
+  c.on('open', () => c.send({ t: 'reg', id: myId, name: myName }));
+  c.on('data', d => { if (d.t === 'peers') d.list.forEach(p => connectTo(p.id)); });
+  c.on('close', () => { hubConn = null; setTimeout(claimOrJoinLobby, 500 + Math.random() * 2000); });
+}
+
+/* =====================  UI: people  ===================== */
+function chip(name, id, me) {
+  const w = el('span', 'chip'); w.dataset.id = id;
+  const h = el('span', 'hl', me ? `${name} (you)` : name);
+  h.style.setProperty('--c', HL[colorIdx(name)]);
+  w.appendChild(h); return w;
+}
+function renderPeople() {
+  const box = $('#people'); box.innerHTML = '';
+  if (!myName) return;
+  box.appendChild(chip(myName, 'me', true));
+  conns.forEach((e, id) => box.appendChild(chip(e.name, id, false)));
+  const f = el('form', 'addpeer');
+  const inp = el('input'); inp.placeholder = 'find a user…'; inp.maxLength = 20;
+  const b = el('button', 'sticker', '+'); b.type = 'submit'; b.style.padding = '0 10px';
+  f.append(inp, b);
+  f.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const n = inp.value.trim();
+    if (!NAME_RE.test(n)) return toast('Enter a valid username');
+    if (n.toLowerCase() === myName.toLowerCase()) return toast("That's you!");
+    connectTo(idFor(n)); inp.value = ''; toast(`Looking for ${n}…`);
+  });
+  box.appendChild(f);
+}
+
+/* =====================  UI: messages  ===================== */
+const msgsEl = $('#msgs');
+function renderMsgs() {
+  if (!myName) return;
+  const near = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 120;
+  const seen = new Set();
+  const list = ymsgs.toArray().filter(m => m && m.id && !seen.has(m.id) && seen.add(m.id))
+    .sort((a, b) => a.ts - b.ts).slice(-300);
+  msgsEl.innerHTML = '';
+  if (!list.length) {
+    const e = el('div', 'empty');
+    const s = el('div', 'sticky', 'The page is blank.\nWrite the first line!');
+    s.style.setProperty('--s', STK[0]);
+    e.appendChild(s); msgsEl.appendChild(e); return;
+  }
+  let last = list[list.length - 1];
+  for (const m of list) {
+    const mine = m.name === myName;
+    const ci = colorIdx(m.name);
+    const row = el('div', 'msg' + (mine ? ' me' : ''));
+    const meta = el('div', 'meta');
+    const nm = el('span', 'hl', m.name); nm.style.setProperty('--c', HL[ci]);
+    meta.append(nm, document.createTextNode(' ' + new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
+    row.appendChild(meta);
+    if (m.text.length > 90 || m.text.includes('\n')) {
+      const s = el('div', 'sticky', m.text);
+      s.style.setProperty('--s', STK[ci]);
+      s.style.setProperty('--r', ((hash(m.id) % 40) / 10 - 2).toFixed(1) + 'deg');
+      row.appendChild(s);
+    } else {
+      const t = el('div', 'txt');
+      const h = el('span', 'hl', m.text); h.style.setProperty('--c', HL[ci]);
+      t.appendChild(h); row.appendChild(t);
+    }
+    msgsEl.appendChild(row);
+  }
+  if (near || last.name === myName) msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+/* =====================  UI: typing  ===================== */
+function renderTyping() {
+  const box = $('#typing'); box.innerHTML = '';
+  const names = [...typers.keys()];
+  if (!names.length) return;
+  const h = el('span', 'hl', names.length === 1 ? `${names[0]} is writing` : names.length === 2 ? `${names[0]} and ${names[1]} are writing` : 'several people are writing');
+  h.style.setProperty('--c', '#d7f0ff');
+  const pen = el('span', 'pen', ' ✎'); h.appendChild(pen);
+  box.appendChild(h);
+}
+let typingOn = false, typingTimer = null;
+function pingTyping() {
+  if (!typingOn) { typingOn = true; broadcast({ t: 'typing', on: true }); }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(stopTyping, 1800);
+}
+function stopTyping() { if (typingOn) { typingOn = false; broadcast({ t: 'typing', on: false }); } clearTimeout(typingTimer); }
+
+/* =====================  composer  ===================== */
+const input = $('#input');
+input.addEventListener('input', () => {
+  input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+  if (input.value.trim()) pingTyping(); else stopTyping();
+});
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#form').requestSubmit(); }
+});
+$('#form').addEventListener('submit', e => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  stopTyping();
+  ydoc.transact(() => ymsgs.push([{ id: uid(), name: myName, text, ts: Date.now() }]));
+  input.value = ''; input.style.height = 'auto'; input.focus();
+});
+
+/* =====================  join screen  ===================== */
+const nameInput = $('#nameInput'), goBtn = $('#goBtn');
+function showJoinError(t) {
+  $('#joinErrTxt').textContent = t; $('#joinErr').classList.remove('hidden');
+  goBtn.disabled = false; goBtn.textContent = 'Start writing ✎';
+  $('#app').classList.add('hidden'); $('#join').classList.remove('hidden');
+}
+async function join() {
+  const n = nameInput.value.trim();
+  $('#joinErr').classList.add('hidden');
+  if (!NAME_RE.test(n) || n.length > 20) return showJoinError('Use letters, numbers, - or _ (max 20, no spaces).');
+  goBtn.disabled = true; goBtn.textContent = 'Opening the notebook…';
+  myName = n; myId = idFor(n);
+  try {
+    await Promise.race([idb('kv', 'readwrite', s => s.put(n, 'username')), new Promise(r => setTimeout(r, 1500))]);
+  } catch {}
+  try {
+    await initMic();                       // auto-enable the mic (this click is the user gesture browsers need)
+    try { actx ??= new AudioContext(); actx.resume(); } catch {}
+    startPeer();
+  } catch (e) {
+    console.error(e);
+    showJoinError('Something went wrong: ' + (e?.message || e));
+  }
+}
+goBtn.addEventListener('click', join);
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
+
+window.addEventListener('beforeunload', () => { try { peer?.destroy(); hubPeer?.destroy(); } catch {} });
+
+/* =====================  boot  ===================== */
+$('#date').textContent = new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+(async () => {
+  goBtn.disabled = false; goBtn.textContent = 'Start writing ✎';   // libraries are ready; join works even if IndexedDB is blocked
+  nameInput.focus();
+  try {
+    const ups = await Promise.race([idb('updates', 'readonly', s => s.getAll()), new Promise(r => setTimeout(() => r([]), 2000))]);
+    (ups || []).forEach(u => Y.applyUpdate(ydoc, u, 'idb'));
+    const saved = await Promise.race([idb('kv', 'readonly', s => s.get('username')), new Promise(r => setTimeout(r, 2000))]);
+    if (saved && !nameInput.value) nameInput.value = saved;
+  } catch (e) { console.warn('IndexedDB unavailable:', e); }
+})();
+</script>
+</body>
+</html>
